@@ -1,23 +1,40 @@
-import 'dart:typed_data';
 import 'dart:convert';
-import 'package:flutter/material.dart';
+import 'dart:typed_data';
 import 'package:camera/camera.dart';
+import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart';
 
-// Custom painter for landmarks
+// 🎯 Painter to draw detected landmarks and body connections
 class PosePainter extends CustomPainter {
   final List<Offset> points;
-  PosePainter(this.points);
+  final List<List<int>> connections;
+
+  PosePainter(this.points, this.connections);
 
   @override
   void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = Colors.green
-      ..strokeWidth = 5.0
+    final jointPaint = Paint()
+      ..color = Colors.greenAccent
       ..style = PaintingStyle.fill;
 
+    final linePaint = Paint()
+      ..color = Colors.blueAccent
+      ..strokeWidth = 2.0;
+
+    // Draw connections (limbs)
+    for (var conn in connections) {
+      if (conn.length < 2) continue;
+      int start = conn[0];
+      int end = conn[1];
+      if (start >= 0 && end >= 0 && start < points.length && end < points.length) {
+        canvas.drawLine(points[start], points[end], linePaint);
+      }
+    }
+
+    // Draw joint points
     for (var point in points) {
-      canvas.drawCircle(point, 5.0, paint);
+      canvas.drawCircle(point, 4.0, jointPaint);
     }
   }
 
@@ -25,6 +42,7 @@ class PosePainter extends CustomPainter {
   bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
 }
 
+// 🎥 Main page widget
 class BodyTrackingPage extends StatefulWidget {
   const BodyTrackingPage({super.key});
 
@@ -34,8 +52,10 @@ class BodyTrackingPage extends StatefulWidget {
 
 class _BodyTrackingPageState extends State<BodyTrackingPage> {
   CameraController? _controller;
-  bool _isDetecting = false;
+  bool _isRecording = false;
+  String _statusMessage = "Press 'Record Form' to begin.";
   List<Offset> _landmarks = [];
+  List<List<int>> _connections = [];
   late List<CameraDescription> cameras;
 
   @override
@@ -46,83 +66,85 @@ class _BodyTrackingPageState extends State<BodyTrackingPage> {
 
   Future<void> initializeCamera() async {
     cameras = await availableCameras();
-    _controller = CameraController(
-      cameras[0],
-      ResolutionPreset.medium,
-      enableAudio: false,
+
+    // Use front camera if available
+    final frontCamera = cameras.firstWhere(
+      (c) => c.lensDirection == CameraLensDirection.front,
+      orElse: () => cameras.first,
     );
+
+    _controller = CameraController(frontCamera, ResolutionPreset.medium, enableAudio: false);
     await _controller!.initialize();
-
-    _controller!.startImageStream((CameraImage image) {
-      if (!_isDetecting) {
-        _isDetecting = true;
-        processCameraImage(image);
-      }
-    });
-
     setState(() {});
   }
 
-  Future<void> processCameraImage(CameraImage image) async {
-    try {
-      // Convert YUV -> JPEG
-      final jpeg = await convertYUV420toJpeg(image);
+  // 📸 Capture one frame and send to backend
+  Future<void> captureAndSendFrame() async {
+    if (_controller == null || !_controller!.value.isInitialized) return;
 
-      // Send to backend (optional)
+    setState(() {
+      _isRecording = true;
+      _statusMessage = "Analyzing pose...";
+    });
+
+    try {
+      // Capture frame
+      final XFile file = await _controller!.takePicture();
+      final bytes = await file.readAsBytes();
+
+      // Send frame to backend
       var request = http.MultipartRequest(
-          'POST', Uri.parse('http://192.168.1.114:5001/analyze_frame'));
-      request.files.add(http.MultipartFile.fromBytes('frame', jpeg,
-          filename: 'frame.jpg'));
+        'POST',
+        Uri.parse('http://192.168.1.114:5001/analyze_frame'), // 🔧 replace with your backend IP
+  
+        
+      );
+
+      request.files.add(http.MultipartFile.fromBytes(
+        'frame',
+        bytes,
+        filename: 'frame.jpg',
+        contentType: MediaType('image', 'jpeg'),
+      ));
+
       var response = await request.send();
       var responseData = await response.stream.bytesToString();
-
-      // Example: backend returns landmarks as normalized x,y [0,1]
       final decoded = jsonDecode(responseData);
-      List<dynamic> points = decoded['landmarks'] ?? [];
 
+      // Handle backend response
+      if (decoded['pose_detected'] == false) {
+        setState(() {
+          _landmarks = [];
+          _connections = [];
+          _statusMessage = "Could not detect a person.";
+        });
+        return;
+      }
+
+      List<dynamic> points = decoded['landmarks'];
+      List<dynamic> connData = decoded['connections'];
+
+      // Scale landmarks to preview size
+      final previewSize = _controller!.value.previewSize!;
       setState(() {
         _landmarks = points
-            .map<Offset>((p) => Offset(p[0] * _controller!.value.previewSize!.height,
-                p[1] * _controller!.value.previewSize!.width))
+            .map<Offset>((p) => Offset(
+                  p['x'] * previewSize.width,
+                  p['y'] * previewSize.height,
+                ))
             .toList();
+
+        _connections = connData.map<List<int>>((c) => [c[0], c[1]]).toList();
+        _statusMessage = "Pose detected!";
       });
     } catch (e) {
-      print("Error processing frame: $e");
+      setState(() {
+        _statusMessage = "Error analyzing frame.";
+      });
+      print("Error: $e");
     } finally {
-      _isDetecting = false;
+      setState(() => _isRecording = false);
     }
-  }
-
-  // Converts CameraImage YUV420 -> JPEG
-  Future<Uint8List> convertYUV420toJpeg(CameraImage image) async {
-    final width = image.width;
-    final height = image.height;
-
-    final int uvRowStride = image.planes[1].bytesPerRow;
-    final int uvPixelStride = image.planes[1].bytesPerPixel ?? 1;
-
-    final img = Uint8List(width * height * 3);
-
-    int index = 0;
-    for (int y = 0; y < height; y++) {
-      final uvRow = (y ~/ 2) * uvRowStride;
-      for (int x = 0; x < width; x++) {
-        final yp = image.planes[0].bytes[y * image.planes[0].bytesPerRow + x];
-        final up = image.planes[1].bytes[uvRow + (x ~/ 2) * uvPixelStride];
-        final vp = image.planes[2].bytes[uvRow + (x ~/ 2) * uvPixelStride];
-
-        int r = (yp + 1.402 * (vp - 128)).round().clamp(0, 255);
-        int g =
-            (yp - 0.344136 * (up - 128) - 0.714136 * (vp - 128)).round().clamp(0, 255);
-        int b = (yp + 1.772 * (up - 128)).round().clamp(0, 255);
-
-        img[index++] = r;
-        img[index++] = g;
-        img[index++] = b;
-      }
-    }
-    // Encode RGB bytes to JPEG (use external library if needed)
-    return img; // You can send raw RGB to Python backend
   }
 
   @override
@@ -134,9 +156,7 @@ class _BodyTrackingPageState extends State<BodyTrackingPage> {
   @override
   Widget build(BuildContext context) {
     if (_controller == null || !_controller!.value.isInitialized) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
     return Scaffold(
@@ -144,9 +164,41 @@ class _BodyTrackingPageState extends State<BodyTrackingPage> {
       body: Stack(
         children: [
           CameraPreview(_controller!),
-          CustomPaint(
-            painter: PosePainter(_landmarks),
-            child: Container(),
+          CustomPaint(painter: PosePainter(_landmarks, _connections)),
+          Positioned(
+            bottom: 80,
+            left: 0,
+            right: 0,
+            child: Center(
+              child: ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _isRecording ? Colors.red : Colors.green,
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                icon: Icon(_isRecording ? Icons.stop : Icons.videocam),
+                label: Text(_isRecording ? "Analyzing..." : "Record Form"),
+                onPressed: _isRecording ? null : captureAndSendFrame,
+              ),
+            ),
+          ),
+          Positioned(
+            bottom: 30,
+            left: 0,
+            right: 0,
+            child: Center(
+              child: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.black54,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  _statusMessage,
+                  style: const TextStyle(color: Colors.white, fontSize: 16),
+                ),
+              ),
+            ),
           ),
         ],
       ),
