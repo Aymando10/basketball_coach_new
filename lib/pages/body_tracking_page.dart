@@ -1,11 +1,9 @@
 import 'dart:convert';
-import 'dart:typed_data';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
 
-// 🎯 Painter to draw detected landmarks and body connections
 class PosePainter extends CustomPainter {
   final List<Offset> points;
   final List<List<int>> connections;
@@ -14,35 +12,28 @@ class PosePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final jointPaint = Paint()
-      ..color = Colors.greenAccent
-      ..style = PaintingStyle.fill;
-
+    final jointPaint = Paint()..color = Colors.greenAccent;
     final linePaint = Paint()
       ..color = Colors.blueAccent
-      ..strokeWidth = 2.0;
+      ..strokeWidth = 2;
 
-    // Draw connections (limbs)
-    for (var conn in connections) {
-      if (conn.length < 2) continue;
-      int start = conn[0];
-      int end = conn[1];
-      if (start >= 0 && end >= 0 && start < points.length && end < points.length) {
-        canvas.drawLine(points[start], points[end], linePaint);
+    Offset map(Offset p) => Offset(p.dx * size.width, p.dy * size.height);
+
+    for (final c in connections) {
+      if (c[0] < points.length && c[1] < points.length) {
+        canvas.drawLine(map(points[c[0]]), map(points[c[1]]), linePaint);
       }
     }
 
-    // Draw joint points
-    for (var point in points) {
-      canvas.drawCircle(point, 4.0, jointPaint);
+    for (final p in points) {
+      canvas.drawCircle(map(p), 5, jointPaint);
     }
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
+  bool shouldRepaint(_) => true;
 }
 
-// 🎥 Main page widget
 class BodyTrackingPage extends StatefulWidget {
   const BodyTrackingPage({super.key});
 
@@ -52,105 +43,75 @@ class BodyTrackingPage extends StatefulWidget {
 
 class _BodyTrackingPageState extends State<BodyTrackingPage> {
   CameraController? _controller;
-  bool _isRecording = false;
-  String _statusMessage = "Press 'Record Form' to begin.";
-  List<Offset> _landmarks = [];
+  bool _busy = false;
+  String _status = "Tap camera to analyze";
+  int _score = 0;
+
+  List<Offset> _points = [];
   List<List<int>> _connections = [];
-  late List<CameraDescription> cameras;
 
   @override
   void initState() {
     super.initState();
-    initializeCamera();
+    _initCamera();
   }
 
-  Future<void> initializeCamera() async {
-    cameras = await availableCameras();
-
-    // Use front camera if available
-    final frontCamera = cameras.firstWhere(
-      (c) => c.lensDirection == CameraLensDirection.front,
-      orElse: () => cameras.first,
+  Future<void> _initCamera() async {
+    final cams = await availableCameras();
+    _controller = CameraController(
+      cams.first,
+      ResolutionPreset.medium,
+      enableAudio: false,
     );
-
-    _controller = CameraController(frontCamera, ResolutionPreset.medium, enableAudio: false);
     await _controller!.initialize();
-    setState(() {});
+    if (mounted) setState(() {});
   }
 
-  // 📸 Capture one frame and send to backend
-  Future<void> captureAndSendFrame() async {
-    if (_controller == null || !_controller!.value.isInitialized) return;
+  Future<void> _analyze() async {
+    if (_busy || _controller == null) return;
 
     setState(() {
-      _isRecording = true;
-      _statusMessage = "Analyzing pose...";
+      _busy = true;
+      _status = "Analyzing...";
     });
 
-    try {
-      // Capture frame
-      final XFile file = await _controller!.takePicture();
-      final bytes = await file.readAsBytes();
+    final img = await _controller!.takePicture();
+    final bytes = await img.readAsBytes();
 
-      // Send frame to backend
-      var request = http.MultipartRequest(
-        'POST',
-        Uri.parse('http://192.168.1.114:5001/analyze_frame'), // 🔧 replace with your backend IP
-  
-        
-      );
+    final uri = Uri.parse("http://192.168.1.114:5001/analyze_frame");
 
-      request.files.add(http.MultipartFile.fromBytes(
-        'frame',
+    final req = http.MultipartRequest("POST", uri)
+      ..files.add(http.MultipartFile.fromBytes(
+        "frame",
         bytes,
-        filename: 'frame.jpg',
-        contentType: MediaType('image', 'jpeg'),
+        filename: "frame.jpg",
+        contentType: MediaType("image", "jpeg"),
       ));
 
-      var response = await request.send();
-      var responseData = await response.stream.bytesToString();
-      final decoded = jsonDecode(responseData);
+    final res = await req.send();
+    final body = await res.stream.bytesToString();
+    final decoded = jsonDecode(body);
 
-      // Handle backend response
-      if (decoded['pose_detected'] == false) {
-        setState(() {
-          _landmarks = [];
-          _connections = [];
-          _statusMessage = "Could not detect a person.";
-        });
-        return;
-      }
-
-      List<dynamic> points = decoded['landmarks'];
-      List<dynamic> connData = decoded['connections'];
-
-      // Scale landmarks to preview size
-      final previewSize = _controller!.value.previewSize!;
+    if (decoded["pose_detected"] == true) {
       setState(() {
-        _landmarks = points
-            .map<Offset>((p) => Offset(
-                  p['x'] * previewSize.width,
-                  p['y'] * previewSize.height,
-                ))
+        _points = (decoded["landmarks"] as List)
+            .map((p) => Offset(p["x"].toDouble(), p["y"].toDouble()))
             .toList();
-
-        _connections = connData.map<List<int>>((c) => [c[0], c[1]]).toList();
-        _statusMessage = "Pose detected!";
+        _connections = (decoded["connections"] as List)
+            .map<List<int>>((c) => [c[0], c[1]])
+            .toList();
+        _score = decoded["score"];
+        _status = "Score: $_score";
       });
-    } catch (e) {
+    } else {
       setState(() {
-        _statusMessage = "Error analyzing frame.";
+        _points.clear();
+        _connections.clear();
+        _status = "No pose detected";
       });
-      print("Error: $e");
-    } finally {
-      setState(() => _isRecording = false);
     }
-  }
 
-  @override
-  void dispose() {
-    _controller?.dispose();
-    super.dispose();
+    setState(() => _busy = false);
   }
 
   @override
@@ -160,44 +121,24 @@ class _BodyTrackingPageState extends State<BodyTrackingPage> {
     }
 
     return Scaffold(
-      appBar: AppBar(title: const Text("Body Tracking")),
+      appBar: AppBar(title: const Text("Shot Analysis")),
       body: Stack(
         children: [
           CameraPreview(_controller!),
-          CustomPaint(painter: PosePainter(_landmarks, _connections)),
+          CustomPaint(painter: PosePainter(_points, _connections)),
           Positioned(
-            bottom: 80,
+            bottom: 40,
             left: 0,
             right: 0,
-            child: Center(
-              child: ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: _isRecording ? Colors.red : Colors.green,
-                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            child: Column(
+              children: [
+                Text(_status, style: const TextStyle(color: Colors.white, fontSize: 18)),
+                const SizedBox(height: 12),
+                FloatingActionButton(
+                  onPressed: _analyze,
+                  child: const Icon(Icons.camera),
                 ),
-                icon: Icon(_isRecording ? Icons.stop : Icons.videocam),
-                label: Text(_isRecording ? "Analyzing..." : "Record Form"),
-                onPressed: _isRecording ? null : captureAndSendFrame,
-              ),
-            ),
-          ),
-          Positioned(
-            bottom: 30,
-            left: 0,
-            right: 0,
-            child: Center(
-              child: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: Colors.black54,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  _statusMessage,
-                  style: const TextStyle(color: Colors.white, fontSize: 16),
-                ),
-              ),
+              ],
             ),
           ),
         ],
