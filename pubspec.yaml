@@ -13,10 +13,15 @@ dependencies:
   cupertino_icons: ^1.0.8
   http: ^1.5.0
   camera: ^0.11.0+2
+  path: ^1.9.0
   path_provider: ^2.0.11
   image: ^4.0.21
   http_parser: ^4.1.2
   youtube_player_iframe: ^5.1.2
+  google_mlkit_pose_detection: ^0.10.0
+  google_mlkit_commons: ^0.6.0
+  sqflite: ^2.3.0
+  permission_handler: ^12.0.1
 
 dev_dependencies:
   flutter_test:

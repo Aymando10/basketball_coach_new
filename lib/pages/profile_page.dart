@@ -15,9 +15,6 @@ class ProfilePage extends StatelessWidget {
   final List<String> achievementsLocked = [
     "50 Shots Analysed",
     "100 Shots Analysed",
-    "Completed 10 Shooting Drills",
-    "Achieved 80% Accuracy in Dribbling Tests",
-    "Finished Advanced Passing Course",
   ];
 
   @override
