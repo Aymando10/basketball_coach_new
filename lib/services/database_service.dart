@@ -7,7 +7,13 @@ class ShotRecord {
   final int? id;
   final double elbowAngle;
   final double kneeAngle;
-  final int score;
+
+  final int totalScore;
+  final int elbowScore;
+  final int kneeScore;
+  final int wristScore;
+  final int speedScore;
+
   final int releaseTimeMs;
   final String timestamp;
 
@@ -15,7 +21,11 @@ class ShotRecord {
     this.id,
     required this.elbowAngle,
     required this.kneeAngle,
-    required this.score,
+    required this.totalScore,
+    required this.elbowScore,
+    required this.kneeScore,
+    required this.wristScore,
+    required this.speedScore,
     required this.releaseTimeMs,
     required this.timestamp,
   });
@@ -25,7 +35,11 @@ class ShotRecord {
       'id': id,
       'elbowAngle': elbowAngle,
       'kneeAngle': kneeAngle,
-      'score': score,
+      'totalScore': totalScore,
+      'elbowScore': elbowScore,
+      'kneeScore': kneeScore,
+      'wristScore': wristScore,
+      'speedScore': speedScore,
       'releaseTimeMs': releaseTimeMs,
       'timestamp': timestamp,
     };
@@ -36,7 +50,11 @@ class ShotRecord {
       id: map['id'],
       elbowAngle: map['elbowAngle'],
       kneeAngle: map['kneeAngle'],
-      score: map['score'],
+      totalScore: map['totalScore'],
+      elbowScore: map['elbowScore'],
+      kneeScore: map['kneeScore'],
+      wristScore: map['wristScore'],
+      speedScore: map['speedScore'],
       releaseTimeMs: map['releaseTimeMs'],
       timestamp: map['timestamp'],
     );
@@ -64,7 +82,11 @@ class DatabaseService {
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             elbowAngle REAL,
             kneeAngle REAL,
-            score INTEGER,
+            totalScore INTEGER,
+            elbowScore INTEGER,
+            kneeScore INTEGER,
+            wristScore INTEGER,
+            speedScore INTEGER,
             releaseTimeMs INTEGER,
             timestamp TEXT
           )
