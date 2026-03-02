@@ -1,3 +1,5 @@
+// body_tracking_page.dart
+
 import 'dart:async';
 import 'dart:math';
 
@@ -7,6 +9,9 @@ import 'package:google_mlkit_pose_detection/google_mlkit_pose_detection.dart';
 import 'package:google_mlkit_commons/google_mlkit_commons.dart';
 
 import '../services/database_service.dart';
+import 'score_page.dart';
+
+enum ShotPhase { idle, set, dip, rise, release, complete }
 
 class PosePainter extends CustomPainter {
   final Map<PoseLandmarkType, PoseLandmark> landmarks;
@@ -20,16 +25,12 @@ class PosePainter extends CustomPainter {
   static const List<List<PoseLandmarkType>> connections = [
     [PoseLandmarkType.leftShoulder, PoseLandmarkType.rightShoulder],
     [PoseLandmarkType.leftHip, PoseLandmarkType.rightHip],
-
     [PoseLandmarkType.leftShoulder, PoseLandmarkType.leftElbow],
     [PoseLandmarkType.leftElbow, PoseLandmarkType.leftWrist],
-
     [PoseLandmarkType.rightShoulder, PoseLandmarkType.rightElbow],
     [PoseLandmarkType.rightElbow, PoseLandmarkType.rightWrist],
-
     [PoseLandmarkType.leftHip, PoseLandmarkType.leftKnee],
     [PoseLandmarkType.leftKnee, PoseLandmarkType.leftAnkle],
-
     [PoseLandmarkType.rightHip, PoseLandmarkType.rightKnee],
     [PoseLandmarkType.rightKnee, PoseLandmarkType.rightAnkle],
   ];
@@ -38,14 +39,12 @@ class PosePainter extends CustomPainter {
     final lm = landmarks[type];
     if (lm == null) return null;
 
-    // Avoid divide-by-zero / nonsense sizes
     final safeW = imageSize.width <= 0 ? 1.0 : imageSize.width;
     final safeH = imageSize.height <= 0 ? 1.0 : imageSize.height;
 
     final scaleX = canvasSize.width / safeW;
     final scaleY = canvasSize.height / safeH;
 
-    // Front camera preview is mirrored; mirror overlay horizontally to match.
     final mirroredX = safeW - lm.x;
 
     return Offset(
@@ -62,7 +61,6 @@ class PosePainter extends CustomPainter {
 
     final jointPaint = Paint()..color = Colors.greenAccent;
 
-    // Connections
     for (final pair in connections) {
       final a = _scale(pair[0], size);
       final b = _scale(pair[1], size);
@@ -71,7 +69,6 @@ class PosePainter extends CustomPainter {
       }
     }
 
-    // Joints
     for (final entry in landmarks.entries) {
       final p = _scale(entry.key, size);
       if (p != null) {
@@ -82,8 +79,8 @@ class PosePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant PosePainter oldDelegate) {
-    // Repaint when new landmark map instance arrives or image size changes
-    return oldDelegate.landmarks != landmarks || oldDelegate.imageSize != imageSize;
+    return oldDelegate.landmarks != landmarks ||
+        oldDelegate.imageSize != imageSize;
   }
 }
 
@@ -100,27 +97,38 @@ class _BodyTrackingPageState extends State<BodyTrackingPage> {
 
   bool _isStreaming = false;
   bool _isProcessing = false;
+  bool _autoStopping = false;
+  bool _showLoading = false;
+
+  Timer? _autoStopTimer;
 
   double _latestElbowAngle = 0;
   double _latestKneeAngle = 0;
+
+  double? _releaseElbow;
+  double? _releaseKnee;
+  int? _releaseTimeMs;
+
+  double _kneeSpeedAtRelease = 0;
+  double _elbowSpeedAtRelease = 0;
 
   Map<PoseLandmarkType, PoseLandmark> _latestLandmarks = {};
   Size _latestImageSize = const Size(1, 1);
 
   final DatabaseService _db = DatabaseService();
 
-  // Throttle (important on iOS to avoid UI freeze)
   DateTime _lastProcessed = DateTime.fromMillisecondsSinceEpoch(0);
-  static const int _minProcessIntervalMs = 120; // ~8 fps
+  static const int _minProcessIntervalMs = 120;
+
+  final List<_AngleSample> _angleHistory = [];
+  bool _releaseDetected = false;
 
   @override
   void initState() {
     super.initState();
 
     _poseDetector = PoseDetector(
-      options: PoseDetectorOptions(
-        mode: PoseDetectionMode.stream,
-      ),
+      options: PoseDetectorOptions(mode: PoseDetectionMode.stream),
     );
 
     _initCamera();
@@ -129,22 +137,19 @@ class _BodyTrackingPageState extends State<BodyTrackingPage> {
   Future<void> _initCamera() async {
     final cameras = await availableCameras();
 
-    // ✅ Always front camera
     final frontCamera = cameras.firstWhere(
       (c) => c.lensDirection == CameraLensDirection.front,
       orElse: () => cameras.first,
     );
 
-    final controller = CameraController(
+    _controller = CameraController(
       frontCamera,
       ResolutionPreset.medium,
       enableAudio: false,
-      imageFormatGroup: ImageFormatGroup.yuv420, // iOS-friendly for MLKit
+      imageFormatGroup: ImageFormatGroup.yuv420,
     );
 
-    _controller = controller;
-    await controller.initialize();
-
+    await _controller!.initialize();
     if (mounted) setState(() {});
   }
 
@@ -154,34 +159,35 @@ class _BodyTrackingPageState extends State<BodyTrackingPage> {
     final controller = _controller;
     if (controller == null || !controller.value.isInitialized) return;
 
+    _angleHistory.clear();
+    _releaseDetected = false;
+    _autoStopping = false;
+
     _lastProcessed = DateTime.fromMillisecondsSinceEpoch(0);
 
     await controller.startImageStream((CameraImage image) async {
-      // Throttle frames
       final now = DateTime.now();
-      if (now.difference(_lastProcessed).inMilliseconds < _minProcessIntervalMs) {
-        return;
-      }
+      if (now.difference(_lastProcessed).inMilliseconds <
+          _minProcessIntervalMs) return;
+
       _lastProcessed = now;
 
-      if (_isProcessing) return;
+      if (_isProcessing || _autoStopping) return;
       _isProcessing = true;
 
       try {
-        // Update image size for the painter
-        _latestImageSize = Size(image.width.toDouble(), image.height.toDouble());
+        _latestImageSize =
+            Size(image.width.toDouble(), image.height.toDouble());
 
-        final inputImage = _convertCameraImage(image, controller.description);
-        final poses = await _poseDetector.processImage(inputImage);
+        final inputImage =
+            _convertCameraImage(image, controller.description);
+
+        final poses =
+            await _poseDetector.processImage(inputImage);
 
         if (poses.isNotEmpty) {
-          _processPose(poses.first);
-        } else {
-          // Optional: clear overlay when nothing detected (comment out if you prefer "last known pose")
-          // if (_latestLandmarks.isNotEmpty && mounted) setState(() => _latestLandmarks = {});
+          _processPose(poses.first, now);
         }
-      } catch (_) {
-        // Optional: debugPrint("Pose processing error: $e");
       } finally {
         _isProcessing = false;
       }
@@ -190,46 +196,185 @@ class _BodyTrackingPageState extends State<BodyTrackingPage> {
     if (mounted) setState(() => _isStreaming = true);
   }
 
-  Future<void> _stopStreaming() async {
-    final controller = _controller;
-    if (controller != null && controller.value.isStreamingImages) {
-      try {
-        await controller.stopImageStream();
-      } catch (_) {
-        // ignore
-      }
-    }
-
-    // Log last measured values
-    await _db.insertShot(_latestElbowAngle, _latestKneeAngle);
-
-    if (mounted) setState(() => _isStreaming = false);
-  }
-
-  void _processPose(Pose pose) {
-    // New map instance so shouldRepaint triggers reliably
-    _latestLandmarks = Map<PoseLandmarkType, PoseLandmark>.from(pose.landmarks);
+  void _processPose(Pose pose, DateTime timestamp) {
+    _latestLandmarks =
+        Map<PoseLandmarkType, PoseLandmark>.from(pose.landmarks);
 
     final shoulder = pose.landmarks[PoseLandmarkType.rightShoulder];
     final elbow = pose.landmarks[PoseLandmarkType.rightElbow];
     final wrist = pose.landmarks[PoseLandmarkType.rightWrist];
-
     final hip = pose.landmarks[PoseLandmarkType.rightHip];
     final knee = pose.landmarks[PoseLandmarkType.rightKnee];
     final ankle = pose.landmarks[PoseLandmarkType.rightAnkle];
 
+    double? elbowAngle;
+    double? kneeAngle;
+
     if (shoulder != null && elbow != null && wrist != null) {
-      _latestElbowAngle = _calculateAngle(shoulder, elbow, wrist);
+      elbowAngle = _calculateAngle(shoulder, elbow, wrist);
+      _latestElbowAngle = elbowAngle;
     }
 
     if (hip != null && knee != null && ankle != null) {
-      _latestKneeAngle = _calculateAngle(hip, knee, ankle);
+      kneeAngle = _calculateAngle(hip, knee, ankle);
+      _latestKneeAngle = kneeAngle;
+    }
+
+    if (elbowAngle != null && kneeAngle != null) {
+      _angleHistory.add(
+        _AngleSample(
+          t: timestamp.millisecondsSinceEpoch,
+          elbow: elbowAngle,
+          knee: kneeAngle,
+        ),
+      );
+
+      if (_angleHistory.length > 150) {
+        _angleHistory.removeAt(0);
+      }
+
+      if (!_releaseDetected) {
+        _tryDetectRelease();
+      }
     }
 
     if (mounted) setState(() {});
   }
 
-  double _calculateAngle(PoseLandmark a, PoseLandmark b, PoseLandmark c) {
+  void _tryDetectRelease() {
+    if (_angleHistory.length < 6) return;
+
+    final w = _angleHistory.sublist(_angleHistory.length - 6);
+
+    double vel(_AngleSample a0, _AngleSample a1) {
+      final dt = max(1, a1.t - a0.t);
+      return (a1.elbow - a0.elbow) / dt;
+    }
+
+    double kneeVel(_AngleSample a0, _AngleSample a1) {
+      final dt = max(1, a1.t - a0.t);
+      return (a1.knee - a0.knee) / dt;
+    }
+
+    final v1 = vel(w[2], w[3]);
+    final v2 = vel(w[3], w[4]);
+    final v3 = vel(w[4], w[5]);
+
+    final kneeExtending =
+        kneeVel(w[3], w[4]) > 0 &&
+        kneeVel(w[4], w[5]) > 0;
+
+    final elbowSpike =
+        v3 > v2 &&
+        v3 > v1 &&
+        v3 > 0.02;
+
+    if (kneeExtending && elbowSpike) {
+      _releaseDetected = true;
+
+      final releaseSample = w.last;
+
+      _releaseElbow = releaseSample.elbow;
+      _releaseKnee = releaseSample.knee;
+      _releaseTimeMs = releaseSample.t;
+
+      _kneeSpeedAtRelease = kneeVel(w[4], w[5]);
+      _elbowSpeedAtRelease = vel(w[4], w[5]);
+
+      _handleAutoStop();
+    }
+  }
+
+  Future<void> _handleAutoStop() async {
+    if (_autoStopping) return;
+    _autoStopping = true;
+
+    if (mounted) {
+      setState(() {
+        _isStreaming = false;
+        _showLoading = true;
+      });
+    }
+
+    _autoStopTimer?.cancel();
+
+    _autoStopTimer = Timer(const Duration(milliseconds: 300), () async {
+      await _stopStreaming();
+
+      final score = _computeScore();
+
+      final shot = ShotRecord(
+        elbowAngle: _releaseElbow ?? 0,
+        kneeAngle: _releaseKnee ?? 0,
+        score: score,
+        releaseTimeMs: _releaseTimeMs ?? 0,
+        timestamp: DateTime.now().toIso8601String(),
+      );
+
+      await _db.insertShot(shot);
+
+      if (!mounted) return;
+
+      setState(() => _showLoading = false);
+
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ScorePage(
+            score: score,
+            elbow: _releaseElbow ?? 0,
+            knee: _releaseKnee ?? 0,
+          ),
+        ),
+      );
+    });
+  }
+
+  Future<void> _stopStreaming() async {
+    final controller = _controller;
+    if (controller == null) return;
+
+    for (int attempt = 0; attempt < 3; attempt++) {
+      try {
+        if (controller.value.isStreamingImages) {
+          await controller.stopImageStream();
+        }
+        break;
+      } catch (_) {
+        await Future.delayed(const Duration(milliseconds: 120));
+      }
+    }
+
+    _autoStopping = false;
+  }
+
+  int _computeScore() {
+    int scoreAngle(
+        double value, double target, double tolerance, int maxPoints) {
+      final diff = (value - target).abs();
+      final raw = (1 - (diff / tolerance)).clamp(0.0, 1.0);
+      return (raw * maxPoints).round();
+    }
+
+    final elbowScore =
+        scoreAngle(_releaseElbow ?? 0, 175, 25, 40);
+
+    final kneeScore =
+        scoreAngle(_releaseKnee ?? 0, 170, 30, 40);
+
+    final coordinationScore =
+        (_kneeSpeedAtRelease > 0 &&
+                _elbowSpeedAtRelease > 0.02)
+            ? 20
+            : 10;
+
+    return elbowScore + kneeScore + coordinationScore;
+  }
+
+  double _calculateAngle(
+      PoseLandmark a,
+      PoseLandmark b,
+      PoseLandmark c) {
     final ab = Offset(a.x - b.x, a.y - b.y);
     final cb = Offset(c.x - b.x, c.y - b.y);
 
@@ -239,36 +384,44 @@ class _BodyTrackingPageState extends State<BodyTrackingPage> {
 
     if (magAB == 0 || magCB == 0) return 0;
 
-    final cosTheta = (dot / (magAB * magCB)).clamp(-1.0, 1.0);
+    final cosTheta =
+        (dot / (magAB * magCB)).clamp(-1.0, 1.0);
     return acos(cosTheta) * 180 / pi;
   }
 
-  InputImage _convertCameraImage(CameraImage image, CameraDescription camera) {
+  InputImage _convertCameraImage(
+      CameraImage image,
+      CameraDescription camera) {
     final rotation =
-        InputImageRotationValue.fromRawValue(camera.sensorOrientation) ??
+        InputImageRotationValue.fromRawValue(
+                camera.sensorOrientation) ??
             InputImageRotation.rotation0deg;
 
     final format =
         InputImageFormatValue.fromRawValue(image.format.raw) ??
             InputImageFormat.nv21;
 
-    // NOTE: This "plane[0]" approach is what you've had working on iOS.
     return InputImage.fromBytes(
       bytes: image.planes.first.bytes,
       metadata: InputImageMetadata(
-        size: Size(image.width.toDouble(), image.height.toDouble()),
+        size: Size(image.width.toDouble(),
+            image.height.toDouble()),
         rotation: rotation,
         format: format,
-        bytesPerRow: image.planes.first.bytesPerRow,
+        bytesPerRow:
+            image.planes.first.bytesPerRow,
       ),
     );
   }
 
   @override
   void dispose() {
+    _autoStopTimer?.cancel();
+
     final controller = _controller;
-    if (controller != null && controller.value.isStreamingImages) {
-      controller.stopImageStream(); // don't await in dispose
+    if (controller != null &&
+        controller.value.isStreamingImages) {
+      controller.stopImageStream();
     }
 
     _controller?.dispose();
@@ -280,22 +433,19 @@ class _BodyTrackingPageState extends State<BodyTrackingPage> {
   Widget build(BuildContext context) {
     final controller = _controller;
 
-    if (controller == null || !controller.value.isInitialized) {
+    if (controller == null ||
+        !controller.value.isInitialized) {
       return const Scaffold(
         body: Center(child: CircularProgressIndicator()),
       );
     }
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text("Free Throw Analysis"),
-      ),
+      appBar: AppBar(title: const Text("Free Throw Analysis")),
       body: Stack(
         children: [
-          // 1) Camera preview
           CameraPreview(controller),
 
-          // 2) ✅ Overlay must be forced to fill the Stack, otherwise it may not paint.
           Positioned.fill(
             child: IgnorePointer(
               child: CustomPaint(
@@ -307,54 +457,55 @@ class _BodyTrackingPageState extends State<BodyTrackingPage> {
             ),
           ),
 
-          // 3) UI
-          Positioned(
-            bottom: 40,
-            left: 10, 
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start, 
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withOpacity(0.6),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
+          if (_showLoading)
+            Positioned.fill(
+              child: Container(
+                color: Colors.black.withOpacity(0.7),
+                child: const Center(
                   child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
                     children: [
+                      CircularProgressIndicator(
+                          color: Colors.white),
+                      SizedBox(height: 16),
                       Text(
-                        "Elbow: ${_latestElbowAngle.toStringAsFixed(1)}°",
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 18,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        "Knee: ${_latestKneeAngle.toStringAsFixed(1)}°",
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 18,
-                        ),
-                      ),
+                        "Analyzing Shot...",
+                        style: TextStyle(color: Colors.white),
+                      )
                     ],
                   ),
                 ),
+              ),
+            ),
 
-                const SizedBox(height: 16),
-
-                ElevatedButton(
-                  onPressed: _isStreaming ? _stopStreaming : _startStreaming,
-                  child: Text(
-                    _isStreaming ? "Stop Recording" : "Start Recording",
-                  ),
-                ),
-              ],
+          Positioned(
+            bottom: 40,
+            left: 10,
+            child: ElevatedButton(
+              onPressed: _isStreaming
+                  ? _stopStreaming
+                  : _startStreaming,
+              child: Text(
+                _isStreaming
+                    ? "Stop Recording"
+                    : "Start Recording",
+              ),
             ),
           ),
         ],
       ),
     );
   }
+}
+
+class _AngleSample {
+  final int t;
+  final double elbow;
+  final double knee;
+
+  _AngleSample({
+    required this.t,
+    required this.elbow,
+    required this.knee,
+  });
 }

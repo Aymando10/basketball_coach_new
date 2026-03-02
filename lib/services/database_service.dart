@@ -1,5 +1,47 @@
+// services/database_service.dart
+
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
+
+class ShotRecord {
+  final int? id;
+  final double elbowAngle;
+  final double kneeAngle;
+  final int score;
+  final int releaseTimeMs;
+  final String timestamp;
+
+  ShotRecord({
+    this.id,
+    required this.elbowAngle,
+    required this.kneeAngle,
+    required this.score,
+    required this.releaseTimeMs,
+    required this.timestamp,
+  });
+
+  Map<String, dynamic> toMap() {
+    return {
+      'id': id,
+      'elbowAngle': elbowAngle,
+      'kneeAngle': kneeAngle,
+      'score': score,
+      'releaseTimeMs': releaseTimeMs,
+      'timestamp': timestamp,
+    };
+  }
+
+  factory ShotRecord.fromMap(Map<String, dynamic> map) {
+    return ShotRecord(
+      id: map['id'],
+      elbowAngle: map['elbowAngle'],
+      kneeAngle: map['kneeAngle'],
+      score: map['score'],
+      releaseTimeMs: map['releaseTimeMs'],
+      timestamp: map['timestamp'],
+    );
+  }
+}
 
 class DatabaseService {
   static Database? _database;
@@ -15,13 +57,15 @@ class DatabaseService {
 
     return openDatabase(
       path,
-      version: 1,
+      version: 2,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE shots (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             elbowAngle REAL,
             kneeAngle REAL,
+            score INTEGER,
+            releaseTimeMs INTEGER,
             timestamp TEXT
           )
         ''');
@@ -29,16 +73,15 @@ class DatabaseService {
     );
   }
 
-  Future<void> insertShot(double elbow, double knee) async {
+  Future<void> insertShot(ShotRecord shot) async {
     final db = await database;
+    await db.insert('shots', shot.toMap());
+  }
 
-    await db.insert(
-      'shots',
-      {
-        'elbowAngle': elbow,
-        'kneeAngle': knee,
-        'timestamp': DateTime.now().toIso8601String(),
-      },
-    );
+  Future<List<ShotRecord>> getShots() async {
+    final db = await database;
+    final maps = await db.query('shots', orderBy: 'id DESC');
+
+    return maps.map((e) => ShotRecord.fromMap(e)).toList();
   }
 }

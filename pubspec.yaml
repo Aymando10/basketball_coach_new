@@ -17,7 +17,7 @@ dependencies:
   path_provider: ^2.0.11
   image: ^4.0.21
   http_parser: ^4.1.2
-  youtube_player_iframe: ^5.1.2
+  youtube_player_iframe: ^5.2.2
   google_mlkit_pose_detection: ^0.10.0
   google_mlkit_commons: ^0.6.0
   sqflite: ^2.3.0
