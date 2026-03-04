@@ -1,0 +1,109 @@
+{
+  "knee": {
+    "title": "Knee Dip",
+    "bands": [
+      {
+        "minScore": 0,
+        "maxScore": 9,
+        "headline": "You barely dipped",
+        "detail": "Try a deeper, smoother knee bend before you rise. Most good reps have a noticeable dip, not a straight-leg push.",
+        "tips": [
+          "Start balanced, then dip under control",
+          "Avoid collapsing forward—stay tall through your torso"
+        ]
+      },
+      {
+        "minScore": 10,
+        "maxScore": 19,
+        "headline": "Decent dip, could be more consistent",
+        "detail": "You're getting some knee bend, but it varies. Aim for a repeatable dip depth each rep.",
+        "tips": ["Pause briefly at set", "Dip then rise in one smooth motion"]
+      },
+      {
+        "minScore": 20,
+        "maxScore": 25,
+        "headline": "Great knee dip",
+        "detail": "Good depth and timing. Keep it smooth and repeatable.",
+        "tips": ["Maintain balance through your feet", "Drive straight up"]
+      }
+    ]
+  },
+  "elbow": {
+    "title": "Elbow Extension",
+    "bands": [
+      {
+        "minScore": 0,
+        "maxScore": 9,
+        "headline": "Not enough extension at release",
+        "detail": "Your elbow isn't finishing. Focus on reaching up through the shot and fully extending the shooting arm.",
+        "tips": ["Think: 'reach high', not 'push forward'", "Hold your finish for 1 second"]
+      },
+      {
+        "minScore": 10,
+        "maxScore": 19,
+        "headline": "Good, but finish a bit stronger",
+        "detail": "Your extension is close. Clean up the last part of the motion to fully finish the shot.",
+        "tips": ["Finish with a straight arm", "Keep shoulder relaxed"]
+      },
+      {
+        "minScore": 20,
+        "maxScore": 25,
+        "headline": "Strong elbow finish",
+        "detail": "Good extension at release—nice.",
+        "tips": ["Keep this consistent under fatigue"]
+      }
+    ]
+  },
+  "wrist": {
+    "title": "Wrist Follow-Through",
+    "bands": [
+      {
+        "minScore": 0,
+        "maxScore": 9,
+        "headline": "Follow-through is low",
+        "detail": "Your wrist isn't finishing high enough. Snap the wrist and keep fingers pointing down, holding the follow-through.",
+        "tips": ["Hold the follow-through for 1-2 seconds", "Finish with relaxed fingers"]
+      },
+      {
+        "minScore": 10,
+        "maxScore": 19,
+        "headline": "Solid follow-through",
+        "detail": "You're getting a decent finish, but it could be more pronounced and stable.",
+        "tips": ["More 'snap' at the end", "Elbow up, wrist down"]
+      },
+      {
+        "minScore": 20,
+        "maxScore": 25,
+        "headline": "Great follow-through",
+        "detail": "Nice wrist snap and finish. Keep it.",
+        "tips": ["Consistency is the goal—repeat this rep"]
+      }
+    ]
+  },
+  "speed": {
+    "title": "Release Speed",
+    "bands": [
+      {
+        "minScore": 0,
+        "maxScore": 9,
+        "headline": "Release looks slow",
+        "detail": "Try a quicker, more decisive release. Smooth doesn’t mean slow—aim for a sharp finish.",
+        "tips": ["Drive up then 'snap' the arm", "Avoid pausing mid-rise"]
+      },
+      {
+        "minScore": 10,
+        "maxScore": 19,
+        "headline": "Good tempo",
+        "detail": "Your release speed is okay. Improve consistency by keeping the motion continuous.",
+        "tips": ["One smooth chain: dip > rise > release"]
+      },
+      {
+        "minScore": 20,
+        "maxScore": 25,
+        "headline": "Explosive release",
+        "detail": "Nice pop at release. Good sign of efficient sequencing.",
+        "tips": ["Keep shoulders relaxed to stay accurate"]
+      }
+    ]
+  }
+}

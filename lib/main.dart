@@ -70,7 +70,7 @@ class _MainScreenState extends State<MainScreen> {
             label: 'Analyze',
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.school, color: Colors.black),
+            icon: Icon(Icons.video_library, color: Colors.black),
             label: 'Learn',
           ),
           BottomNavigationBarItem(

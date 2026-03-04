@@ -5,7 +5,6 @@ import 'dart:math';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:google_mlkit_pose_detection/google_mlkit_pose_detection.dart';
-import 'package:google_mlkit_commons/google_mlkit_commons.dart';
 
 import '../services/database_service.dart';
 import 'score_page.dart';
@@ -201,7 +200,7 @@ class _BodyTrackingPageState extends State<BodyTrackingPage> {
   // Peak elbow speed at release (deg/ms)
   double _elbowSpeedAtRelease = 0;
 
-  // ✅ Wrist follow-through tracking: max normalized lift over the rep
+  // Wrist follow-through tracking: max normalized lift over the rep
   double _maxWristLiftNorm = 0;
 
   Map<PoseLandmarkType, PoseLandmark> _latestLandmarks = {};
@@ -356,7 +355,7 @@ class _BodyTrackingPageState extends State<BodyTrackingPage> {
       final elbowAngle = _smoothedElbow!;
       final kneeAngle = _smoothedKnee!;
 
-      // Update UI angles from smoothed (more stable readout)
+      // Update UI angles from smoothed 
       _latestElbowAngle = elbowAngle;
       _latestKneeAngle = kneeAngle;
 
@@ -596,11 +595,10 @@ class _BodyTrackingPageState extends State<BodyTrackingPage> {
       falloff: 25,
     );
 
-    // ✅ 3) Wrist follow-through score (use MAX over rep, not snapshot)
-    // This fixes the “regression” you saw when wrist at the exact release frame is noisy/occluded.
+    // 3) Wrist follow-through score (use MAX over rep, not snapshot)
     int wristScore = _scoreRange25(_maxWristLiftNorm, _wristLiftGoodMin, _wristLiftGoodMax);
 
-    // If wrist never went above shoulder, heavily discount (but don't hard cap to 5)
+    // If wrist never went above shoulder, heavily discount follow-through score since it’s a strong sign of an upright shot with poor arc/shot quality. This prevents false positives where the wrist is just in a bad position at release but the shot was actually decent.
     if (!_wristAboveShoulderSeen) {
       wristScore = (wristScore * 0.5).round();
     }
@@ -692,7 +690,7 @@ class _BodyTrackingPageState extends State<BodyTrackingPage> {
           if (_showLoading)
             Positioned.fill(
               child: Container(
-                color: Colors.black.withOpacity(0.7),
+                color: Colors.black.withValues(alpha: 0.7),
                 child: const Center(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
@@ -722,7 +720,7 @@ class _BodyTrackingPageState extends State<BodyTrackingPage> {
             child: Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.6),
+                color: Colors.black.withValues(alpha: 0.6),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Column(

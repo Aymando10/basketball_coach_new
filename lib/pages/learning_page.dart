@@ -50,8 +50,21 @@ _videoCategories = {
           title: "Improve Your Ball Handling with Phil Handy",
           youtubeId: "Dk65Bq24OyQ",
         ),
+        CoachingVideo(
+            title: "Kyrie Irving's FULL NBA HANDLES WORKOUT | The BallGame",
+            youtubeId: "S1vtgpEPBqE",
+          ),
       ],
-      "Passing": const [],
+      "Passing": const [
+        CoachingVideo(
+          title: "Beyond Assists: Passing, shot creation & Offensive Load | Thinking Basketball",
+          youtubeId: "yoLgSWA7n6g",
+        ),
+        CoachingVideo(
+          title: "5 Tips to Boost Your Court Vision! | By Any Means Basketball",
+          youtubeId: "E2qO26n2oUg",
+        ),
+      ],
       "Athletic Conditioning": const [
         CoachingVideo(
           title: "1 Hour Uncut Workout with LeBron James",
@@ -134,7 +147,7 @@ class _VideoCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         child: Ink(
           decoration: BoxDecoration(
-            color: Colors.black.withOpacity(0.03),
+            color: Colors.black.withValues(alpha: 0.03),
             borderRadius: BorderRadius.circular(12),
           ),
           child: Column(
