@@ -135,12 +135,9 @@ class _BodyTrackingPageState extends State<BodyTrackingPage> {
     }
   }
 
-  // =====================
   // Detection tuning
-  // =====================
 
   // Smoothing for angles to reduce noisy ROM/velocity spikes
-  // Higher alpha = more responsive, lower alpha = smoother
   static const double _emaAlpha = 0.35;
 
   // Prevent “upright false releases”: require elbow to be fairly extended when we call release
@@ -195,7 +192,6 @@ class _BodyTrackingPageState extends State<BodyTrackingPage> {
   double? _releaseElbow;
   double? _releaseKnee;
   int? _releaseTimeMs;
-  Map<PoseLandmarkType, PoseLandmark>? _releaseLandmarks;
 
   // Peak elbow speed at release (deg/ms)
   double _elbowSpeedAtRelease = 0;
@@ -258,7 +254,6 @@ class _BodyTrackingPageState extends State<BodyTrackingPage> {
     _releaseElbow = null;
     _releaseKnee = null;
     _releaseTimeMs = null;
-    _releaseLandmarks = null;
 
     _elbowSpeedAtRelease = 0;
 
@@ -284,6 +279,7 @@ class _BodyTrackingPageState extends State<BodyTrackingPage> {
 
     _lastProcessed = DateTime.fromMillisecondsSinceEpoch(0);
 
+    
     await controller.startImageStream((CameraImage image) async {
       final now = DateTime.now();
       if (now.difference(_lastProcessed).inMilliseconds < _minProcessIntervalMs) return;
@@ -325,7 +321,7 @@ class _BodyTrackingPageState extends State<BodyTrackingPage> {
       if (wrist.y < shoulder.y) _wristAboveShoulderSeen = true;
     }
 
-    // ✅ Track max wrist lift over the whole rep (normalized)
+    // Track max wrist lift over the whole rep (normalized)
     if (shoulder != null && hip != null && elbow != null && wrist != null) {
       final torsoLen = sqrt(pow(shoulder.x - hip.x, 2) + pow(shoulder.y - hip.y, 2));
       if (torsoLen > 1e-6) {
@@ -440,11 +436,9 @@ class _BodyTrackingPageState extends State<BodyTrackingPage> {
         break;
 
       case ShotPhase.rise:
-        // Main release gate (same spirit as your last working point),
-        // but with:
-        //  - EMA smoothing (reduces noise)
-        //  - min elbow angle at release
-        //  - debounce over 2 frames
+        // Main release gate,
+        // requires good dip + rise, wrist above shoulder at some point, arm loaded, and minimum ROM + velocity thresholds. The debounce helps prevent false positives from single-frame angle spikes that can occur with fast arm movements.
+       
         final gatePass = _dipDetected &&
             _riseDetected &&
             _wristAboveShoulderSeen &&
@@ -468,7 +462,6 @@ class _BodyTrackingPageState extends State<BodyTrackingPage> {
           _releaseKnee = current.knee;
           _releaseTimeMs = current.t;
 
-          _releaseLandmarks = Map<PoseLandmarkType, PoseLandmark>.from(_latestLandmarks);
 
           _elbowSpeedAtRelease = _peakElbowVelocity(window: 6);
 
@@ -595,7 +588,7 @@ class _BodyTrackingPageState extends State<BodyTrackingPage> {
       falloff: 25,
     );
 
-    // 3) Wrist follow-through score (use MAX over rep, not snapshot)
+    // 3) Wrist follow-through score using the MAX
     int wristScore = _scoreRange25(_maxWristLiftNorm, _wristLiftGoodMin, _wristLiftGoodMax);
 
     // If wrist never went above shoulder, heavily discount follow-through score since it’s a strong sign of an upright shot with poor arc/shot quality. This prevents false positives where the wrist is just in a bad position at release but the shot was actually decent.
@@ -697,7 +690,7 @@ class _BodyTrackingPageState extends State<BodyTrackingPage> {
                     children: [
                       CircularProgressIndicator(color: Colors.white),
                       SizedBox(height: 16),
-                      Text("Analyzing Shot...", style: TextStyle(color: Colors.white)),
+                      Text("Analysing Shot...", style: TextStyle(color: Colors.white)),
                     ],
                   ),
                 ),

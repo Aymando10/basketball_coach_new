@@ -67,7 +67,7 @@ class _MainScreenState extends State<MainScreen> {
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.sports_basketball, color: Colors.black),
-            label: 'Analyze',
+            label: 'Analyse',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.video_library, color: Colors.black),

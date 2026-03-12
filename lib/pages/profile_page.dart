@@ -4,6 +4,88 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import '../services/database_service.dart';
 
+class Trophy {
+  final String title;
+  final String description;
+  final bool unlocked;
+
+  const Trophy(this.title, this.description, this.unlocked);
+}
+
+List<Trophy> evaluateTrophies(List<ShotRecord> shots) {
+  return [
+    Trophy("First Shot", "Take your first shot", shots.isNotEmpty),
+    Trophy("Getting Started (10 shots)", "Hit 10 shots", shots.length >= 10),
+    Trophy("Dedicated Shooter (50 shots)", "Hit 50 shots", shots.length >= 50),
+    Trophy("Sharpshooter (90+)", "Score 90 or more points", shots.any((s) => s.totalScore >= 90)),
+    Trophy("Perfect Shot (100)", "Score a perfect 100", shots.any((s) => s.totalScore == 100)),
+    Trophy("Grinder (Consistent 80+)", "Average 80+ over 20 shots", shots.length >= 20 && shots.map((s) => s.totalScore).reduce((a, b) => a + b) / shots.length >= 80),
+  ];
+}
+
+class TrophyCard extends StatelessWidget {
+  final Trophy trophy;
+
+  const TrophyCard({super.key, required this.trophy});
+
+  void _showInfo(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: Text(trophy.title),
+        content: Text(trophy.description),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text("Close"),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final unlocked = trophy.unlocked;
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(14),
+      onTap: () => _showInfo(context),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(14),
+          color: unlocked
+              ? Colors.orange.withValues(alpha: 0.15)
+              : Colors.grey.withValues(alpha: 0.12),
+          border: Border.all(
+            color: unlocked ? Colors.orange : Colors.grey,
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              unlocked ? Icons.emoji_events : Icons.lock,
+              color: unlocked ? Colors.orange : Colors.grey,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                trophy.title,
+                style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  color: unlocked ? null : Colors.grey,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
 
@@ -211,8 +293,8 @@ class _ProfilePageState extends State<ProfilePage> {
 
     // y-axis bounds (pad a bit)
     final ys = spots.map((e) => e.y).toList();
-    final minY = max(0.0, (ys.reduce(min) - 5).floorToDouble()).toDouble();
-    final maxY = min(100.0, (ys.reduce(max) + 5).ceilToDouble()).toDouble();
+    final minY = max(0.0, (ys.reduce(min) - 5).floorToDouble());
+    final maxY = min(100.0, (ys.reduce(max) + 5).ceilToDouble());
 
     return SizedBox(
       height: 220,
@@ -327,6 +409,8 @@ class _ProfilePageState extends State<ProfilePage> {
         prev10.isEmpty ? 0 : _avgInt(prev10.map((s) => s.totalScore));
     final delta = (prev10.isEmpty) ? null : (last10Avg - prev10Avg);
 
+    final trophies = evaluateTrophies(_shots);
+    
     return Scaffold(
       appBar: AppBar(
         title: const Text("Profile"),
@@ -353,7 +437,31 @@ class _ProfilePageState extends State<ProfilePage> {
                             fontWeight: FontWeight.w700,
                           ),
                     ),
+                    const SizedBox(height: 22),
+                    Text(
+                      "Trophies",
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                    ),
+
                     const SizedBox(height: 12),
+                    GridView.builder(
+                      itemCount: trophies.length,
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: 2,
+                        mainAxisSpacing: 10,
+                        crossAxisSpacing: 10,
+                        childAspectRatio: 3.5,
+                      ),
+                      itemBuilder: (context, index) {
+                        return TrophyCard(trophy: trophies[index]);
+                      },
+                    ),
+
+                    const SizedBox(height: 22),
 
                     GridView.count(
                       crossAxisCount: 2,
