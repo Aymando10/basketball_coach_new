@@ -43,11 +43,8 @@ class PosePainter extends CustomPainter {
     final scaleX = canvasSize.width / safeW;
     final scaleY = canvasSize.height / safeH;
 
-    // Front camera preview is mirrored; mirror overlay horizontally to match.
-    final mirroredX = safeW - lm.x;
-
     return Offset(
-      mirroredX * scaleX,
+      lm.x * scaleX,
       lm.y * scaleY,
     );
   }
@@ -656,6 +653,68 @@ class _BodyTrackingPageState extends State<BodyTrackingPage> {
     super.dispose();
   }
 
+  void _showTutorial() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (context) {
+        return DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: 0.75,
+          minChildSize: 0.45,
+          maxChildSize: 0.95,
+          builder: (context, scrollController) {
+            return ListView(
+              controller: scrollController,
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+              children: [
+                Text(
+                  "How to set up a successful analysis",
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
+                ),
+                const SizedBox(height: 12),
+
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(14),
+                  child: Image.asset(
+                    "assets/demo_img.jpg",
+                    fit: BoxFit.cover,
+                  ),
+                ),
+
+                const SizedBox(height: 14),
+                Text(
+                  "Checklist",
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
+                ),
+                const SizedBox(height: 8),
+
+                const _TutorialBullet("Place the phone on the floor or a low tripod, side-on to your shooting arm."),
+                const _TutorialBullet("Frame your full body: head to feet should be visible, especially shoulder-elbow-wrist and hip-knee-ankle."),
+                const _TutorialBullet("Stand 3-5 metres from the camera so joints are not cropped."),
+                const _TutorialBullet("Good lighting: avoid bright lights directly behind you (reduces landmark accuracy)."),
+                const _TutorialBullet("Keep the phone stable (no handheld recording)."),
+                const _TutorialBullet("Good luck, and remember that consistent setup is more important than a perfect setup!"),
+
+                const SizedBox(height: 16),
+                FilledButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text("Got it"),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+    
+
   @override
   Widget build(BuildContext context) {
     final controller = _controller;
@@ -740,6 +799,44 @@ class _BodyTrackingPageState extends State<BodyTrackingPage> {
                     ),
                 ],
               ),
+            ),
+          ),
+
+          Positioned(
+            bottom: 40,
+            right: 10,
+            child: ElevatedButton(
+              onPressed: _showTutorial,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.deepOrangeAccent,
+                foregroundColor: Colors.black,
+              ),
+              child: Text("Tutorial"),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+
+class _TutorialBullet extends StatelessWidget {
+  final String text;
+  const _TutorialBullet(this.text);
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text("•  "),
+          Expanded(
+            child: Text(
+              text,
+              style: const TextStyle(height: 1.35),
             ),
           ),
         ],

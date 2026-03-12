@@ -34,3 +34,4 @@ flutter:
   uses-material-design: true
   assets:
     - assets/feedback_rules.json
+    - assets/demo_img.jpg

@@ -42,7 +42,7 @@
         "minScore": 10,
         "maxScore": 19,
         "headline": "Good, but finish a bit stronger",
-        "detail": "Your extension is close. Clean up the last part of the motion to fully finish the shot.",
+        "detail": "Your extension is close. Clean up the last part of the motion to fully finish the shot. But if it works for you and you’re consistent, it's not a big deal.",
         "tips": ["Finish with a straight arm", "Keep shoulder relaxed"]
       },
       {
@@ -87,7 +87,7 @@
         "minScore": 0,
         "maxScore": 9,
         "headline": "Release looks slow",
-        "detail": "Try a quicker, more decisive release. Smooth doesn’t mean slow—aim for a sharp finish.",
+        "detail": "Try a quicker, more decisive release. Smooth doesn't mean slow—aim for a sharp finish.",
         "tips": ["Drive up then 'snap' the arm", "Avoid pausing mid-rise"]
       },
       {
